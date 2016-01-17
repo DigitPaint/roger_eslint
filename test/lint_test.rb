@@ -31,11 +31,11 @@ class LintTest < Test::Unit::TestCase
 
   def test_detect_eslint
     assert_nothing_raised do
-      RogerEslint::Lint.new
+      lint_file "test.js"
     end
 
     assert_raise(ArgumentError) do
-      RogerEslint::Lint.new eslint: "eslint-blabla"
+      lint_file "test.js", eslint: "eslint-blabla"
     end
   end
 

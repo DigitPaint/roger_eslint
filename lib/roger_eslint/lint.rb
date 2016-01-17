@@ -28,8 +28,6 @@ module RogerEslint
       }
 
       @options.update(options) if options
-
-      detect_eslint
     end
 
     def lint(test, file_path)
@@ -42,7 +40,7 @@ module RogerEslint
       end
 
       success = file_lints["errorCount"] <= 0
-      success &&= file_lints["warningCount"] <= 0 if @options[:fail_on_warning]
+      success &&= file_lints["warningCount"] <= 0 if @_call_options[:fail_on_warning]
 
       fixables = []
 
@@ -64,25 +62,29 @@ module RogerEslint
     # @option options [Array] :match Files to match
     # @option options [Array[Regexp]] :skip Array of regular expressions to skip files
     def call(test, options)
-      options = {}.update(@options).update(options)
+      @_call_options = {}.update(@options).update(options)
+
+      detect_eslint
 
       test.log(self, "ESLinting files")
 
-      failures = test.get_files(options[:match], options[:skip]).select do |file_path|
+      failures = test.get_files(@_call_options[:match], @_call_options[:skip]).select do |file_path|
         !lint(test, file_path)
       end
       failures.empty?
+    ensure
+      @_call_options = {}
     end
 
     private
 
     def eslint_command(file_path, extras = [])
       command = [
-        @options[:eslint],
+        @_call_options[:eslint],
         "-f", "json"
       ]
 
-      command += @options[:eslint_options] if @options[:eslint_options]
+      command += @_call_options[:eslint_options] if @_call_options[:eslint_options]
 
       command += extras
       command << file_path
@@ -113,7 +115,7 @@ module RogerEslint
     end
 
     def detect_eslint
-      command = [@options[:eslint], "-v", "2>/dev/null"]
+      command = [@_call_options[:eslint], "-v", "2>/dev/null"]
       detect = system(Shellwords.join(command))
       unless detect
         err = "Could not find eslint. Install eslint using: 'npm install -g eslint'."
