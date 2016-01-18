@@ -21,7 +21,7 @@ module RogerEslint
     def initialize(options = {})
       @options = {
         match: ["html/**/*.js"],
-        skip: [],
+        skip: [/vendor\/.*\.js\Z/],
         fail_on_warning: false,
         eslint: "eslint",
         eslint_options: []
