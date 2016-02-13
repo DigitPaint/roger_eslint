@@ -1,5 +1,6 @@
 require File.dirname(__FILE__) + "/../lib/roger_eslint/lint.rb"
 require "test/unit"
+require "roger/testing/mock_project"
 
 # Fake tester to pass into the linter plugin
 class TesterStub
@@ -9,6 +10,15 @@ class TesterStub
   def initialize
     @messages = []
     @files = []
+  end
+
+  def project
+    # Creating a mock project with path will forego the construct creation
+    @project ||= Roger::Testing::MockProject.new(".")
+  end
+
+  def destroy
+    @project.destroy if @project
   end
 
   def log(_, message)
@@ -93,5 +103,7 @@ class LintTest < Test::Unit::TestCase
     messages.shift
 
     [success, messages]
+  ensure
+    faketester.destroy
   end
 end

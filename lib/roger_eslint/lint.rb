@@ -15,7 +15,8 @@ module RogerEslint
     # @option options [Array] :match Files to match
     # @option options [Array[Regexp]] :skip Array of regular expressions to skip files
     # @option options [Boolean] (false) :fail_on_warning Wether or not to fail test on warnings
-    # @option options [String] :eslint eslint command
+    # @option options [String, nil] :eslint eslint command, if nil will search for the command
+    #   Preferring the local node_modules path.
     # @option options [Array] :eslint_options An array of eslint options; make sure
     #   you have the commandline flag and the value in separate elments, so: `["--global", "$"]`
     def initialize(options = {})
@@ -23,7 +24,7 @@ module RogerEslint
         match: ["html/**/*.js"],
         skip: [/vendor\/.*\.js\Z/],
         fail_on_warning: false,
-        eslint: "eslint",
+        eslint: nil,
         eslint_options: []
       }
 
@@ -64,7 +65,7 @@ module RogerEslint
     def call(test, options)
       @_call_options = {}.update(@options).update(options)
 
-      detect_eslint
+      detect_eslint(test)
 
       test.log(self, "ESLinting files")
 
@@ -114,11 +115,27 @@ module RogerEslint
       end
     end
 
-    def detect_eslint
-      command = [@_call_options[:eslint], "-v", "2>/dev/null"]
-      detect = system(Shellwords.join(command))
-      unless detect
+    def detect_eslint(test)
+      if @_call_options[:eslint]
+        commands_to_test = [@_call_options[:eslint]]
+      else
+        commands_to_test = [
+          test.project.path + "node_modules/eslint/bin/eslint.js",
+          "eslint.js",
+          "eslint"
+        ]
+      end
+
+      detect = commands_to_test.detect do |command|
+        system(Shellwords.join([command, "-v"]) + "> /dev/null 2>&1")
+      end
+
+      if detect
+        # Bit of a hack to set the value like this
+        @_call_options[:eslint] = detect
+      else
         err = "Could not find eslint. Install eslint using: 'npm install -g eslint'."
+        err += " Or install eslint locally."
         fail ArgumentError, err
       end
     end
