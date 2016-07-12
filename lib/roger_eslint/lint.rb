@@ -1,4 +1,5 @@
 require "shellwords"
+require "pathname"
 require "json"
 require "roger/test"
 
@@ -31,32 +32,12 @@ module RogerEslint
       @options.update(options) if options
     end
 
-    def lint(test, file_path)
-      output = `#{eslint_command(file_path)}`
-      file_lints = JSON.parse(output).first
+    # @return [Array] failed files
+    def lint(test, file_paths)
+      output = `#{eslint_command(file_paths)}`
+      file_lints = JSON.parse(output)
 
-      unless file_lints
-        test.warn(self, "No files linted")
-        return true
-      end
-
-      success = file_lints["errorCount"] <= 0
-      success &&= file_lints["warningCount"] <= 0 if @_call_options[:fail_on_warning]
-
-      fixables = []
-
-      if success
-        test.log(self, "#{file_path}: OK")
-      else
-        file_lints["messages"].each do |message|
-          fixables << message if message["fix"]
-          report_message(test, file_path, message)
-        end
-      end
-
-      report_fixables(test, file_path, fixables)
-
-      success
+      process_lint_results(test, file_lints)
     end
 
     # @param [Hash] options The options
@@ -69,15 +50,43 @@ module RogerEslint
 
       test.log(self, "ESLinting files")
 
-      failures = test.get_files(@_call_options[:match], @_call_options[:skip]).select do |file_path|
-        !lint(test, file_path)
-      end
-      failures.empty?
+      files = test.get_files(@_call_options[:match], @_call_options[:skip])
+
+      lint(test, files).empty?
     ensure
       @_call_options = {}
     end
 
     private
+
+    def process_lint_results(test, file_lints)
+      if file_lints.empty?
+        test.warn(self, "No files linted")
+        return []
+      end
+
+      file_lints.select do |file_lint|
+        path = file_lint["filePath"]
+
+        success = file_lint["errorCount"] <= 0
+        success &&= file_lint["warningCount"] <= 0 if @_call_options[:fail_on_warning]
+
+        fixables = []
+
+        if success
+          test.log(self, "#{normalize_path(test, path)}: OK")
+        else
+          file_lint["messages"].each do |message|
+            fixables << message if message["fix"]
+            report_message(test, path, message)
+          end
+        end
+
+        report_fixables(test, path, fixables)
+
+        !success
+      end
+    end
 
     def eslint_command(file_path, extras = [])
       command = [
@@ -88,17 +97,19 @@ module RogerEslint
       command += @_call_options[:eslint_options] if @_call_options[:eslint_options]
 
       command += extras
-      command << file_path
+      if file_path.is_a? Array
+        command += file_path
+      else
+        command << file_path
+      end
 
       Shellwords.join(command)
     end
 
     def report_message(test, file_path, message)
-      output = "#{file_path}: "
-      output << message["line"].to_s
-      output << ":"
-      output << message["column"].to_s
-      output << " ["
+      output = "#{normalize_path(test, file_path)}: "
+      output << "#{message['line']}:#{message['column']} "
+      output << "["
       output << ESLINT_SEVERITIES[message["severity"]]
       output << " (Fixable)" if message["fix"]
       output << "] "
@@ -111,7 +122,7 @@ module RogerEslint
     def report_fixables(test, file_path, fixables)
       if fixables.any?
         test.log(self, "#{fixables.size} problems can be fixed automatically. Run:")
-        test.log(self, "  #{eslint_command(file_path, ['--fix'])}")
+        test.log(self, "  #{eslint_command(normalize_path(test, file_path), ['--fix'])}")
       end
     end
 
@@ -138,6 +149,12 @@ module RogerEslint
         err += " Or install eslint locally."
         fail ArgumentError, err
       end
+    end
+
+    # Will make path relative to project dir
+    # @return [String] relative path
+    def normalize_path(test, path)
+      Pathname.new(path).relative_path_from(test.project.path.realpath).to_s
     end
   end
 end
